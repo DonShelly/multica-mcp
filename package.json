@@ -1,0 +1,29 @@
+{
+  "name": "multica-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for the Multica agent platform — exposes issues, comments, workspaces, agents, and autopilots as MCP tools by wrapping the authenticated `multica` CLI.",
+  "type": "module",
+  "main": "server.js",
+  "bin": {
+    "multica-mcp": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "multica",
+    "anthropic",
+    "claude"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
