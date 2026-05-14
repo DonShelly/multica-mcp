@@ -466,11 +466,11 @@ def autopilot_trigger(autopilot_id: str, workspace_id: Optional[str] = None) -> 
 @mcp.tool(description="Create a new autopilot and assign it to an agent.")
 def autopilot_create(
     title: str,
-    agent_id: str,
+    assignee_id: str,
     description: Optional[str] = None,
     workspace_id: Optional[str] = None,
 ) -> dict:
-    body: dict = {"title": title, "agent_id": agent_id}
+    body: dict = {"title": title, "assignee_id": assignee_id}
     if description:
         body["description"] = description
     return _api("POST", "/api/autopilots", json_body=body, workspace_id=workspace_id)
