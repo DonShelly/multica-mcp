@@ -1,36 +1,88 @@
 # multica-mcp
 
-Model Context Protocol server for the [Multica](https://github.com/DonShelly/multica) agent platform.
+Model Context Protocol (MCP) server for the [Multica](https://multica.ai) agent platform.
 
-Exposes issues, comments, workspaces, agents, and autopilots as MCP tools so any MCP-compatible client (Claude Desktop, Claude Code, Cursor, Zed, …) can drive Multica without learning the `multica` CLI.
+Exposes issues, comments, workspaces, agents, autopilots, and projects as **34 MCP tools** so any MCP-compatible client can drive Multica:
 
-Implementation is a thin stdio wrapper around the already-authenticated `multica` CLI, so it inherits your login and tracks the CLI's feature set automatically.
+- **Poke** (interaction.co) — register it as a custom integration via `poke.com/settings/connections/integrations/new`
+- **Claude Desktop** — add to `claude_desktop_config.json`
+- **Claude Code** — `claude mcp add multica ...`
+- **Cursor, Zed, and any other MCP client**
 
-## Install
+The server uses **FastMCP with streamable HTTP transport** at `/mcp`, making it directly compatible with [Poke's MCP integration guide](https://interaction.co/mcp).
+
+---
+
+## Deploy to Render (Poke-compatible)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/DonShelly/multica-mcp)
+
+1. Click **Deploy to Render** above.
+2. In the Render dashboard, set these environment variables (do **not** commit secrets to git):
+
+   | Variable               | Required | Where to get it |
+   | ---------------------- | -------- | --------------- |
+   | `MULTICA_TOKEN`        | ✅       | Run `multica auth status` — it's the `mul_…` value |
+   | `MULTICA_WORKSPACE_ID` | ✅       | Run `multica workspace get --output json` → `id` field |
+   | `POKE_API_KEY`         | optional | [poke.com/settings/advanced](https://poke.com/settings/advanced) |
+   | `MULTICA_SERVER_URL`   | optional | Default: `https://api.multica.ai` |
+
+3. After deploy, your endpoint is: `https://your-service-name.onrender.com/mcp`
+
+### Connect to Poke
+
+1. Go to [poke.com/settings/connections/integrations/new](https://poke.com/settings/connections/integrations/new).
+2. Enter your Render URL: `https://your-service.onrender.com/mcp`
+3. Ask Poke: *"Tell the subagent to use the 'multica' integration's 'issue_list' tool"* to test.
+
+> If Poke doesn't pick up the right tool after a rename, send `clearhistory` to Poke to clear message history.
+
+---
+
+## Local development (stdio, Claude Desktop / Claude Code)
+
+For local use, the original Node.js stdio server is also included.
+
+### Setup
 
 ```bash
-npm install -g multica-mcp
+git clone https://github.com/DonShelly/multica-mcp
+cd multica-mcp
+
+# Python (Render/Poke):
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export MULTICA_TOKEN="mul_..."
+export MULTICA_WORKSPACE_ID="your-workspace-uuid"
+python src/server.py
+# → listening on http://0.0.0.0:8000/mcp
+
+# Node.js (stdio, local):
+npm install
+node server.js
 ```
 
-Or run directly with `npx multica-mcp`.
+### Test with MCP Inspector
 
-## Prerequisites
+```bash
+npx @modelcontextprotocol/inspector
+```
 
-1. `multica` CLI installed and on `PATH` (`multica --version`).
-2. `multica login` completed for the profile the server will use.
+Connect to `http://localhost:8000/mcp` using **Streamable HTTP** transport.
 
-## Configure your MCP client
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+### Claude Desktop (stdio)
 
 ```json
 {
   "mcpServers": {
     "multica": {
-      "command": "npx",
-      "args": ["-y", "multica-mcp"]
+      "command": "node",
+      "args": ["/path/to/multica-mcp/server.js"],
+      "env": {
+        "MULTICA_TOKEN": "mul_...",
+        "MULTICA_WORKSPACE_ID": "your-workspace-uuid"
+      }
     }
   }
 }
@@ -39,64 +91,96 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ### Claude Code
 
 ```bash
-claude mcp add multica npx -y multica-mcp
+claude mcp add multica node /path/to/multica-mcp/server.js
 ```
 
-### Environment variables
+---
 
-| Variable               | Purpose                                                    |
-| ---------------------- | ---------------------------------------------------------- |
-| `MULTICA_BIN`          | Path to the `multica` binary (default: `multica` on PATH). |
-| `MULTICA_PROFILE`      | CLI profile name, passed as `--profile`.                   |
-| `MULTICA_WORKSPACE_ID` | Default workspace UUID (tools can override per-call).      |
-
-## Tools exposed
+## Tools (34 total)
 
 ### Issues
-- `issue_get` — Fetch a single issue by UUID.
-- `issue_list` — List issues with `status` / `priority` / `assignee` filters + pagination.
-- `issue_search` — Full-text search across titles and descriptions.
-- `issue_create` — Create a new issue with optional assignee, priority, parent, status.
-- `issue_update` — Update title / description / priority on an existing issue.
-- `issue_status` — Change status (`todo`, `in_progress`, `in_review`, `done`, `blocked`, `backlog`, `cancelled`).
-- `issue_assign` — Assign to a member/agent by name, or clear the assignee.
-- `issue_runs` — List agent execution runs for an issue.
+| Tool | Description |
+|------|-------------|
+| `issue_get` | Fetch a single issue by UUID |
+| `issue_list` | List issues with status/priority/assignee filters + pagination |
+| `issue_search` | Full-text search across titles and descriptions |
+| `issue_create` | Create a new issue |
+| `issue_update` | Update title, description, priority, status, assignee |
+| `issue_status` | Change status (`todo`, `in_progress`, `in_review`, `done`, `blocked`, `backlog`, `cancelled`) |
+| `issue_assign` | Assign to a member or agent by UUID |
+| `issue_delete` | Delete an issue permanently |
+| `issue_runs` | List agent execution task-runs for an issue |
+| `issue_children` | List child issues of a parent issue |
 
 ### Comments
-- `issue_comment_list` — List comments on an issue (pagination + incremental `since`).
-- `issue_comment_add` — Post a comment, optionally as a reply.
-- `issue_comment_delete` — Delete a comment by UUID.
+| Tool | Description |
+|------|-------------|
+| `issue_comment_list` | List comments (pagination + `since` timestamp) |
+| `issue_comment_add` | Post a comment, optionally as a threaded reply |
+| `issue_comment_update` | Edit an existing comment |
+| `issue_comment_delete` | Delete a comment by UUID |
+
+### Subscribers
+| Tool | Description |
+|------|-------------|
+| `issue_subscriber_list` | List subscribers of an issue |
+| `issue_subscribe` | Subscribe to an issue |
+| `issue_unsubscribe` | Unsubscribe from an issue |
 
 ### Workspace
-- `workspace_get` — Details of the active workspace.
-- `workspace_members` — List humans + agents with their IDs (useful for mentions / assignment).
+| Tool | Description |
+|------|-------------|
+| `workspace_get` | Get workspace details |
+| `workspace_members` | List humans and agents with their UUIDs |
 
 ### Agents
-- `agent_list` — List agents in the workspace.
+| Tool | Description |
+|------|-------------|
+| `agent_list` | List all agents |
+| `agent_get` | Get details for a specific agent |
+| `agent_tasks` | List tasks assigned to an agent |
 
 ### Autopilots
-- `autopilot_list` — List autopilots (optionally filtered by `active` / `paused`).
-- `autopilot_get` — Full details for an autopilot including its triggers.
-- `autopilot_trigger` — Manually fire an autopilot once.
+| Tool | Description |
+|------|-------------|
+| `autopilot_list` | List autopilots (filter by `active`/`paused`) |
+| `autopilot_get` | Get full details including trigger schedule |
+| `autopilot_trigger` | Fire an autopilot once manually |
+| `autopilot_create` | Create a new autopilot |
+| `autopilot_update` | Update title, description, or status |
+| `autopilot_delete` | Delete an autopilot |
+| `autopilot_runs` | List execution history |
 
-All tools accept an optional `workspace_id` to target a workspace other than the CLI default.
+### Projects
+| Tool | Description |
+|------|-------------|
+| `project_list` | List projects |
+| `project_get` | Get a project by UUID |
+| `project_create` | Create a new project |
 
-## Development
+### Poke integration
+| Tool | Description |
+|------|-------------|
+| `poke_send_message` | Send a message to Poke via the inbound webhook (requires `POKE_API_KEY`) |
+| `get_server_info` | Get server version, workspace ID, and env info |
 
-```bash
-npm install
-npm test   # spawns the server, connects an MCP client, smokes workspace_get + issue_list
+All tools accept an optional `workspace_id` parameter to override the default workspace.
+
+---
+
+## Architecture
+
+```
+MCP Client (Poke / Claude Desktop / Cursor)
+        │ MCP protocol (Streamable HTTP or stdio)
+        ▼
+  multica-mcp server (FastMCP / Python)
+        │ REST API calls  Authorization: Bearer {MULTICA_TOKEN}
+        ▼                  X-Workspace-ID: {MULTICA_WORKSPACE_ID}
+  https://api.multica.ai
 ```
 
-The server speaks stdio; for manual inspection you can pipe raw JSON-RPC frames to `node server.js`, but the test harness is easier.
-
-## Why a CLI wrapper?
-
-- Auth is already solved: whatever `multica login` gave the user carries through.
-- New CLI features become available without a code change here.
-- No duplication of the Multica HTTP API surface or token lifecycle.
-
-If upstream adds native MCP support to the Multica server itself, this package should be retired in favour of that.
+Uses direct HTTP calls to the Multica REST API — no `multica` CLI dependency on the server, so it works on Render and any container environment.
 
 ## License
 

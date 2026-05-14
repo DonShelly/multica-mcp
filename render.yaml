@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: multica-mcp
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python src/server.py
+    plan: free
+    autoDeploy: false
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: MULTICA_SERVER_URL
+        value: https://api.multica.ai
+      # Set these in the Render dashboard (do not commit secrets to git):
+      # MULTICA_TOKEN      — from `multica auth status` (the mul_... value)
+      # MULTICA_WORKSPACE_ID — your workspace UUID (from `multica workspace get --output json`)
+      # POKE_API_KEY       — from https://poke.com/settings/advanced (optional)
