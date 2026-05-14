@@ -11,24 +11,62 @@ Required environment variables:
 
 Optional environment variables:
     MULTICA_SERVER_URL   Default: https://api.multica.ai
+    MCP_API_KEY          API key that clients must present (Bearer or X-API-Key header).
+                         If unset, the server accepts all requests (not recommended).
     POKE_API_KEY         API key for poke_send_message (from poke.com/settings/advanced)
     PORT                 HTTP port (default: 8000)
     ENVIRONMENT          Tag shown in get_server_info (default: production)
 """
 
-import json
 import os
 from typing import Any, Optional
 
 import httpx
+import uvicorn
 from fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
 MULTICA_TOKEN = os.environ.get("MULTICA_TOKEN", "")
 MULTICA_WORKSPACE_ID = os.environ.get("MULTICA_WORKSPACE_ID", "")
 MULTICA_SERVER_URL = os.environ.get("MULTICA_SERVER_URL", "https://api.multica.ai").rstrip("/")
+MCP_API_KEY = os.environ.get("MCP_API_KEY", "")
 POKE_API_KEY = os.environ.get("POKE_API_KEY", "")
+
+
+# ─── API key authentication middleware ────────────────────────────────────────
+
+class ApiKeyAuth(BaseHTTPMiddleware):
+    """Reject requests that do not present the configured MCP_API_KEY.
+
+    Clients may send the key as:
+      Authorization: Bearer <key>
+      X-API-Key: <key>
+
+    If MCP_API_KEY is not set the middleware passes all requests through,
+    so existing deployments without the env var keep working until it is set.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if not MCP_API_KEY:
+            return await call_next(request)
+
+        provided = ""
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            provided = auth[len("Bearer "):]
+        if not provided:
+            provided = request.headers.get("X-API-Key", "")
+
+        if provided != MCP_API_KEY:
+            return JSONResponse(
+                {"error": "Unauthorized", "message": "A valid MCP_API_KEY is required."},
+                status_code=401,
+            )
+        return await call_next(request)
 
 # ─── HTTP client helpers ───────────────────────────────────────────────────────
 
@@ -95,10 +133,11 @@ mcp = FastMCP("Multica MCP Server")
 def get_server_info() -> dict:
     return {
         "server": "multica-mcp",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "environment": os.environ.get("ENVIRONMENT", "production"),
         "multica_server_url": MULTICA_SERVER_URL,
         "workspace_id": MULTICA_WORKSPACE_ID or "(not set)",
+        "api_key_auth": bool(MCP_API_KEY),
         "poke_enabled": bool(POKE_API_KEY),
     }
 
@@ -535,11 +574,10 @@ if __name__ == "__main__":
     print(f"  Endpoint : http://{host}:{port}/mcp  (Streamable HTTP)")
     print(f"  Workspace: {MULTICA_WORKSPACE_ID or '(not set — set MULTICA_WORKSPACE_ID)'}")
     print(f"  Token    : {'set' if MULTICA_TOKEN else '(not set — set MULTICA_TOKEN)'}")
+    print(f"  API key  : {'enabled' if MCP_API_KEY else 'DISABLED (set MCP_API_KEY to enable)'}")
     print(f"  Poke     : {'enabled' if POKE_API_KEY else 'disabled (set POKE_API_KEY to enable)'}")
 
-    mcp.run(
-        transport="http",
-        host=host,
-        port=port,
-        stateless_http=True,
-    )
+    app = mcp.http_app(stateless_http=True)
+    app.add_middleware(ApiKeyAuth)
+
+    uvicorn.run(app, host=host, port=port)
